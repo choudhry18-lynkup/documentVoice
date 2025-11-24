@@ -4,65 +4,20 @@ LiveKit Voice Agent for HVAC servicing with document context.
 
 import asyncio
 import logging
-from typing import Annotated
 from livekit import agents, rtc
 from livekit.agents import (
-    AutoSubscribe,
     JobContext,
     WorkerOptions,
     cli,
     llm,
+    AgentSession,
 )
-from livekit.agents.pipeline import VoicePipelineAgent
 from livekit.plugins import openai
 
 from document_processor import DocumentProcessor
 from llm_service import LLMService
 
 logger = logging.getLogger(__name__)
-
-
-class HVACVoiceAgent(VoicePipelineAgent):
-    """Voice agent for HVAC servicing with document context."""
-    
-    def __init__(
-        self,
-        *,
-        ctx: JobContext,
-        document_context: str,
-        llm_service: LLMService,
-    ):
-        """
-        Initialize the HVAC voice agent.
-        
-        Args:
-            ctx: LiveKit job context
-            document_context: Text from HVAC manuals
-            llm_service: LLM service instance
-        """
-        self.llm_service = llm_service
-        self.document_context = document_context
-        
-        # Create system prompt with document context
-        system_prompt = llm_service.create_system_prompt(document_context)
-        
-        # Initialize voice pipeline with OpenAI STT, LLM, and TTS
-        # The built-in OpenAI LLM will use the system prompt with document context
-        super().__init__(
-            vad=agents.VAD.load(sample_rate=16000),
-            stt=openai.STT(),
-            llm=openai.LLM(
-                model=llm_service.model,
-                # The chat_ctx will provide the system prompt with documents
-            ),
-            tts=openai.TTS(voice="alloy"),
-            chat_ctx=llm.ChatContext().append(
-                role="system",
-                text=system_prompt,
-            ),
-        )
-        
-        logger.info("HVAC Voice Agent initialized")
 
 
 async def entrypoint(ctx: JobContext):
@@ -92,18 +47,37 @@ async def entrypoint(ctx: JobContext):
     
     logger.info(f"Loaded document context ({doc_processor.get_context_length(document_text)} tokens)")
     
-    # Initialize and start the voice agent
-    agent = HVACVoiceAgent(
-        ctx=ctx,
-        document_context=document_text,
-        llm_service=llm_service,
+    # Create system prompt with document context
+    system_prompt = llm_service.create_system_prompt(document_context=document_text)
+    
+    # Create chat context with system prompt
+    chat_ctx = llm.ChatContext().append(
+        role="system",
+        text=system_prompt,
     )
     
-    agent.start(ctx.room)
+    # Create agent session with voice pipeline components
+    session = AgentSession(
+        vad=agents.VAD.load(sample_rate=16000),
+        stt=openai.STT(),
+        llm=openai.LLM(model=llm_service.model),
+        tts=openai.TTS(voice="alloy"),
+        chat_ctx=chat_ctx,
+    )
+    
+    logger.info("HVAC Voice Agent initialized")
+    
+    # Start the session
+    await session.start(ctx.room)
     logger.info("Voice agent started")
     
     # Keep the agent running
-    await asyncio.sleep(1)  # Give agent time to initialize
+    try:
+        await asyncio.sleep(3600)  # Run for up to 1 hour (or until disconnected)
+    except asyncio.CancelledError:
+        logger.info("Agent session cancelled")
+    finally:
+        await session.aclose()
 
 
 if __name__ == "__main__":
