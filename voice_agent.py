@@ -23,10 +23,7 @@ logger = logging.getLogger(__name__)
 async def entrypoint(ctx: JobContext):
     """Entry point for the LiveKit agent job."""
     logger.info("Starting HVAC Voice Agent job")
-    
-    # Wait for participant to connect
-    await ctx.wait_for_participant()
-    logger.info("Participant connected")
+    logger.info(f"Room: {ctx.room.name}, Room SID: {ctx.room.sid}")
     
     # Load documents FIRST - this is critical for the agent to have context
     logger.info("Loading HVAC manuals...")
@@ -64,26 +61,37 @@ async def entrypoint(ctx: JobContext):
     system_prompt = llm_service.create_system_prompt(document_context=document_text)
     logger.info(f"System prompt created ({len(system_prompt)} characters)")
     
-    # Create chat context with system prompt containing documents
-    chat_ctx = llm.ChatContext().append(
-        role="system",
-        text=system_prompt,
-    )
+    def _log_conversation(event):
+        item = getattr(event, "item", None)
+        if not isinstance(item, llm.ChatMessage):
+            return
+        
+        text = item.text_content
+        if not text:
+            return
+        
+        if item.role == "user":
+            logger.info(f"👤 USER SAID: {text}")
+        elif item.role == "assistant":
+            logger.info(f"🤖 AGENT RESPONSE: {text}")
+            logger.info(f"   Response length: {len(text)} characters")
+            logger.info(f"   Response tokens (approx): {len(text) // 4}")
     
-    # Create agent session with voice pipeline components
-    session = AgentSession(
-        vad=agents.VAD.load(sample_rate=16000),
-        stt=openai.STT(),
+    hvac_agent = agents.Agent(
+        instructions=system_prompt,
+        stt=openai.STT(use_realtime=True),
         llm=openai.LLM(model=llm_service.model),
         tts=openai.TTS(voice="alloy"),
-        chat_ctx=chat_ctx,
     )
+    
+    session = AgentSession()
+    session.on("conversation_item_added", _log_conversation)
     
     logger.info("HVAC Voice Agent initialized with document context")
     logger.info("Agent is ready to answer questions using the loaded HVAC manuals")
     
-    # Start the session
-    await session.start(ctx.room)
+    # Start the session - AgentSession will handle participant waiting
+    await session.start(hvac_agent, room=ctx.room)
     logger.info("Voice agent started and listening")
     
     # Keep the agent running

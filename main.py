@@ -54,8 +54,8 @@ if __name__ == "__main__":
     import sys
     
     if len(sys.argv) > 1 and sys.argv[1] == "dev":
-        from livekit.agents import cli as livekit_cli
-        from voice_agent import entrypoint, WorkerOptions
+        from livekit.agents import cli as livekit_cli, WorkerOptions
+        from voice_agent import entrypoint
         
         livekit_cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
     else:

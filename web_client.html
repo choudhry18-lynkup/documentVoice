@@ -429,21 +429,51 @@
                     }
                 });
 
+                // Store audio elements to clean up later
+                const audioElements = new Map();
+
                 room.on('trackSubscribed', (track, publication, participant) => {
                     console.log('Track subscribed:', track.kind, participant.identity);
                     
                     if (track.kind === 'audio') {
-                        // Play agent's audio
-                        const audioElement = track.attach();
-                        audioElement.setAttribute('playsinline', 'true');
-                        audioElement.setAttribute('autoplay', 'true');
-                        document.body.appendChild(audioElement);
-                        console.log('Agent audio playing');
+                        // ONLY play audio from the agent, not from yourself
+                        const isLocalParticipant = participant.identity === room.localParticipant.identity;
+                        const isAgent = participant.identity && participant.identity.startsWith('agent');
+                        
+                        if (isLocalParticipant) {
+                            // Don't play your own microphone back to you
+                            console.log('Ignoring local participant audio (your own microphone)');
+                            return;
+                        }
+                        
+                        if (isAgent || !isLocalParticipant) {
+                            // Play agent's audio
+                            const audioElement = track.attach();
+                            audioElement.setAttribute('playsinline', 'true');
+                            audioElement.setAttribute('autoplay', 'true');
+                            document.body.appendChild(audioElement);
+                            
+                            // Store for cleanup
+                            const key = `${participant.identity}-${track.sid}`;
+                            audioElements.set(key, audioElement);
+                            
+                            console.log('Agent audio playing from:', participant.identity);
+                        }
                     }
                 });
 
                 room.on('trackUnsubscribed', (track, publication, participant) => {
-                    track.detach();
+                    // Clean up audio element
+                    const key = `${participant.identity}-${track.sid}`;
+                    const audioElement = audioElements.get(key);
+                    if (audioElement) {
+                        track.detach();
+                        audioElement.remove();
+                        audioElements.delete(key);
+                        console.log('Removed audio element for:', participant.identity);
+                    } else {
+                        track.detach();
+                    }
                 });
 
                 room.on('localTrackPublished', (publication, participant) => {
