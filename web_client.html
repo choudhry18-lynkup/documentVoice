@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HVAC Voice Agent - Web Client</title>
+    <script>
+        // Load LiveKit client library dynamically
+        (function() {
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/livekit-client@2.5.4/dist/livekit-client.umd.min.js';
+            script.async = false; // Load synchronously
+            script.onload = function() {
+                // Library loaded, check for global
+                console.log('Script loaded, checking for LiveKit globals...');
+                console.log('LiveKitClient:', typeof LiveKitClient);
+                console.log('LiveKit:', typeof LiveKit);
+                console.log('window.LiveKitClient:', typeof window.LiveKitClient);
+                console.log('window.LiveKit:', typeof window.LiveKit);
+                
+                // Check various possible global names
+                if (typeof LiveKitClient !== 'undefined') {
+                    console.log('Found LiveKitClient');
+                } else if (typeof window.LiveKitClient !== 'undefined') {
+                    console.log('Found window.LiveKitClient');
+                } else if (typeof LiveKit !== 'undefined') {
+                    window.LiveKitClient = LiveKit;
+                    console.log('Using LiveKit as LiveKitClient');
+                } else if (typeof window.LiveKit !== 'undefined') {
+                    window.LiveKitClient = window.LiveKit;
+                    console.log('Using window.LiveKit as LiveKitClient');
+                } else {
+                    // Try to find it in window object
+                    for (let key in window) {
+                        if (key.toLowerCase().includes('livekit') && window[key] && window[key].Room) {
+                            window.LiveKitClient = window[key];
+                            console.log('Found LiveKit as:', key);
+                            break;
+                        }
+                    }
+                }
+                
+                // Trigger custom event when ready
+                window.dispatchEvent(new Event('livekit-loaded'));
+            };
+            script.onerror = function() {
+                console.error('Failed to load LiveKit client library');
+                window.dispatchEvent(new Event('livekit-error'));
+            };
+            document.head.appendChild(script);
+        })();
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+
+        .status {
+            padding: 12px 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-weight: 500;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .status.disconnected {
+            background: #fee;
+            color: #c33;
+        }
+
+        .status.connecting {
+            background: #ffe;
+            color: #cc6;
+        }
+
+        .status.connected {
+            background: #efe;
+            color: #3c3;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            flex: 1;
+            min-width: 120px;
+            padding: 15px 25px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            color: white;
+        }
+
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-connect {
+            background: #667eea;
+        }
+
+        .btn-connect:hover:not(:disabled) {
+            background: #5568d3;
+        }
+
+        .btn-disconnect {
+            background: #e74c3c;
+        }
+
+        .btn-disconnect:hover:not(:disabled) {
+            background: #c0392b;
+        }
+
+        .btn-mic {
+            background: #27ae60;
+        }
+
+        .btn-mic:hover:not(:disabled) {
+            background: #229954;
+        }
+
+        .btn-mic.muted {
+            background: #e74c3c;
+        }
+
+        .btn-mic.muted:hover:not(:disabled) {
+            background: #c0392b;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .info-box h3 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+
+        .info-box p {
+            color: #666;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+
+        .info-box ul {
+            margin-left: 20px;
+            margin-top: 10px;
+            color: #666;
+        }
+
+        .info-box li {
+            margin-bottom: 5px;
+        }
+
+        .audio-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #27ae60;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+
+        .audio-indicator.inactive {
+            background: #95a5a6;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .error {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 HVAC Voice Agent</h1>
+        <p class="subtitle">Ask questions about HVAC servicing and get expert guidance</p>
+        
+        <div id="status" class="status disconnected">Not Connected</div>
+        
+        <div class="controls">
+            <button id="connectBtn" class="btn-connect">Connect</button>
+            <button id="disconnectBtn" class="btn-disconnect" disabled>Disconnect</button>
+            <button id="micBtn" class="btn-mic" disabled>Enable Microphone</button>
+        </div>
+
+        <div class="error" id="error"></div>
+
+        <div class="info-box">
+            <h3>How to use:</h3>
+            <ol>
+                <li>Click <strong>Connect</strong> to join the room</li>
+                <li>Click <strong>Enable Microphone</strong> to start speaking</li>
+                <li>Ask questions about HVAC systems</li>
+                <li>The agent will respond with voice based on your manuals</li>
+            </ol>
+            <p style="margin-top: 15px;">
+                <span class="audio-indicator" id="audioIndicator"></span>
+                <strong>Status:</strong> <span id="connectionStatus">Ready to connect</span>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Wait for LiveKit client library to load
+        function waitForLiveKit() {
+            return new Promise((resolve, reject) => {
+                // Check if already loaded
+                if (typeof LiveKitClient !== 'undefined') {
+                    resolve(LiveKitClient);
+                    return;
+                }
+                if (typeof LiveKit !== 'undefined') {
+                    window.LiveKitClient = LiveKit;
+                    resolve(LiveKit);
+                    return;
+                }
+                
+                // Wait for the load event
+                const timeout = setTimeout(() => {
+                    reject(new Error('LiveKit client library failed to load (timeout)'));
+                }, 10000); // 10 second timeout
+                
+                window.addEventListener('livekit-loaded', function() {
+                    clearTimeout(timeout);
+                    if (typeof LiveKitClient !== 'undefined') {
+                        resolve(LiveKitClient);
+                    } else if (typeof LiveKit !== 'undefined') {
+                        window.LiveKitClient = LiveKit;
+                        resolve(LiveKit);
+                    } else {
+                        reject(new Error('LiveKit client library loaded but global not found'));
+                    }
+                }, { once: true });
+                
+                window.addEventListener('livekit-error', function() {
+                    clearTimeout(timeout);
+                    reject(new Error('Failed to load LiveKit client library from CDN'));
+                }, { once: true });
+            });
+        }
+
+        // Initialize app after LiveKit loads
+        waitForLiveKit().then(() => {
+            console.log('LiveKit client loaded successfully');
+            initializeApp();
+        }).catch((error) => {
+            const errorEl = document.getElementById('error');
+            errorEl.textContent = 'Failed to load LiveKit client library. Please check your internet connection and refresh the page.';
+            errorEl.classList.add('show');
+            console.error('LiveKit load error:', error);
+            
+            // Show helpful message
+            const statusEl = document.getElementById('status');
+            statusEl.className = 'status disconnected';
+            statusEl.textContent = 'Library Load Failed';
+        });
+
+        function initializeApp() {
+        let room = null;
+        let isMicEnabled = false;
+        const TOKEN_SERVER = 'http://localhost:8080/token';
+
+        const statusEl = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const micBtn = document.getElementById('micBtn');
+        const errorEl = document.getElementById('error');
+        const connectionStatusEl = document.getElementById('connectionStatus');
+        const audioIndicatorEl = document.getElementById('audioIndicator');
+
+        function showError(message) {
+            errorEl.textContent = message;
+            errorEl.classList.add('show');
+            setTimeout(() => {
+                errorEl.classList.remove('show');
+            }, 5000);
+        }
+
+        function updateStatus(status, text) {
+            statusEl.className = `status ${status}`;
+            statusEl.textContent = text;
+            connectionStatusEl.textContent = text;
+        }
+
+        function setButtonsState(connected, micEnabled) {
+            connectBtn.disabled = connected;
+            disconnectBtn.disabled = !connected;
+            micBtn.disabled = !connected;
+            
+            if (micEnabled) {
+                micBtn.textContent = 'Mute Microphone';
+                micBtn.classList.add('muted');
+                audioIndicatorEl.classList.remove('inactive');
+            } else {
+                micBtn.textContent = 'Enable Microphone';
+                micBtn.classList.remove('muted');
+                audioIndicatorEl.classList.add('inactive');
+            }
+        }
+
+        async function connect() {
+            try {
+                updateStatus('connecting', 'Connecting...');
+                setButtonsState(false, false);
+
+                // Get token from server
+                const response = await fetch(TOKEN_SERVER, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        identity: 'user-' + Math.random().toString(36).substr(2, 9),
+                        room: 'hvac-room',
+                        name: 'User'
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Token server error: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                // Ensure LiveKitClient is available
+                if (typeof LiveKitClient === 'undefined') {
+                    if (typeof LiveKit !== 'undefined') {
+                        window.LiveKitClient = LiveKit;
+                    } else {
+                        throw new Error('LiveKit client library not loaded. Please refresh the page.');
+                    }
+                }
+
+                // Create room and connect
+                room = new LiveKitClient.Room({
+                    adaptiveStream: true,
+                    dynacast: true,
+                });
+
+                // Set up event handlers
+                room.on('connected', () => {
+                    console.log('Connected to room');
+                    updateStatus('connected', 'Connected - Agent Ready');
+                    setButtonsState(true, false);
+                });
+
+                room.on('disconnected', () => {
+                    console.log('Disconnected from room');
+                    updateStatus('disconnected', 'Disconnected');
+                    setButtonsState(false, false);
+                    room = null;
+                });
+
+                room.on('participantConnected', (participant) => {
+                    console.log('Participant connected:', participant.identity);
+                    if (participant.identity.startsWith('agent')) {
+                        connectionStatusEl.textContent = 'Agent connected - Ready to talk';
+                    }
+                });
+
+                room.on('trackSubscribed', (track, publication, participant) => {
+                    console.log('Track subscribed:', track.kind, participant.identity);
+                    
+                    if (track.kind === 'audio') {
+                        // Play agent's audio
+                        const audioElement = track.attach();
+                        audioElement.setAttribute('playsinline', 'true');
+                        audioElement.setAttribute('autoplay', 'true');
+                        document.body.appendChild(audioElement);
+                        console.log('Agent audio playing');
+                    }
+                });
+
+                room.on('trackUnsubscribed', (track, publication, participant) => {
+                    track.detach();
+                });
+
+                room.on('localTrackPublished', (publication, participant) => {
+                    console.log('Local track published:', publication.kind);
+                });
+
+                // Connect to room
+                await room.connect(data.url, data.token);
+                
+                // Enable microphone by default
+                await room.localParticipant.setMicrophoneEnabled(true);
+                isMicEnabled = true;
+                setButtonsState(true, true);
+                connectionStatusEl.textContent = 'Connected - Microphone enabled';
+
+            } catch (error) {
+                console.error('Connection error:', error);
+                updateStatus('disconnected', 'Connection Failed');
+                showError(`Failed to connect: ${error.message}`);
+                setButtonsState(false, false);
+            }
+        }
+
+        async function disconnect() {
+            if (room) {
+                await room.disconnect();
+                room = null;
+                isMicEnabled = false;
+                updateStatus('disconnected', 'Disconnected');
+                setButtonsState(false, false);
+            }
+        }
+
+        async function toggleMicrophone() {
+            if (!room) return;
+
+            try {
+                isMicEnabled = !isMicEnabled;
+                await room.localParticipant.setMicrophoneEnabled(isMicEnabled);
+                setButtonsState(true, isMicEnabled);
+                connectionStatusEl.textContent = isMicEnabled 
+                    ? 'Microphone enabled - Speak now' 
+                    : 'Microphone muted';
+            } catch (error) {
+                console.error('Microphone toggle error:', error);
+                showError(`Failed to toggle microphone: ${error.message}`);
+            }
+        }
+
+        // Event listeners
+        connectBtn.addEventListener('click', connect);
+        disconnectBtn.addEventListener('click', disconnect);
+        micBtn.addEventListener('click', toggleMicrophone);
+
+        // Check if token server is available
+        fetch('http://localhost:8080/health')
+            .then(() => {
+                connectionStatusEl.textContent = 'Ready to connect';
+            })
+            .catch(() => {
+                connectionStatusEl.textContent = 'Token server not running - Start token_server.py first';
+                showError('Token server not available. Please start token_server.py on port 8080');
+            });
+        } // End of initializeApp function
+    </script>
+</body>
+</html>
+

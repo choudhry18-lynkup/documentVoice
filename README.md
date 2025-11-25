@@ -33,12 +33,31 @@ A real-time voice agent for HVAC servicing that uses OpenAI's LLM with PDF manua
    - Environment validation
    - Application startup
 
+## Quick Start (LiveKit Cloud)
+
+**For exact commands, see [QUICK_START.md](QUICK_START.md)**
+
+```bash
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Create .env file with LiveKit Cloud credentials
+# Get credentials from: https://cloud.livekit.io → Project Settings → API Keys
+
+# 3. Add PDF manuals to documents/ directory
+
+# 4. Run the agent
+python3 main.py dev
+```
+
+**See [SETUP_CLOUD.md](SETUP_CLOUD.md) for detailed instructions.**
+
 ## Setup
 
 ### Prerequisites
 
 - Python 3.9 or higher
-- LiveKit server (cloud or self-hosted)
+- LiveKit Cloud account (https://cloud.livekit.io) OR self-hosted LiveKit server
 - OpenAI API key
 - PDF HVAC manuals
 
@@ -97,6 +116,33 @@ Or directly:
 ```bash
 python -m voice_agent dev
 ```
+
+### Web Client (Voice Interaction)
+
+To interact with the agent using voice in your browser:
+
+1. **Install web client dependencies:**
+   ```bash
+   pip install flask flask-cors
+   ```
+
+2. **Start the token server** (Terminal 1):
+   ```bash
+   python3 token_server.py
+   ```
+
+3. **Start the voice agent** (Terminal 2):
+   ```bash
+   python3 main.py dev
+   ```
+
+4. **Open the web client:**
+   - Option A: Double-click `web_client.html` in your file browser
+   - Option B: Run `python3 -m http.server 8000` and visit `http://localhost:8000/web_client.html`
+
+5. **Click "Connect"** and **"Enable Microphone"** to start talking!
+
+See [WEB_CLIENT.md](WEB_CLIENT.md) for detailed instructions.
 
 ### Production Deployment
 

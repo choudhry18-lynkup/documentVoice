@@ -4,7 +4,7 @@ LiveKit Voice Agent for HVAC servicing with document context.
 
 import asyncio
 import logging
-from livekit import agents, rtc
+from livekit import agents
 from livekit.agents import (
     JobContext,
     WorkerOptions,
@@ -28,29 +28,43 @@ async def entrypoint(ctx: JobContext):
     await ctx.wait_for_participant()
     logger.info("Participant connected")
     
-    # Initialize document processor and load documents
+    # Load documents FIRST - this is critical for the agent to have context
+    logger.info("Loading HVAC manuals...")
     doc_processor = DocumentProcessor()
     document_text = doc_processor.load_documents(max_documents=2)
     
-    if not document_text:
-        logger.warning("No documents loaded. Agent will run without document context.")
-        document_text = "No HVAC manuals are currently loaded."
+    if not document_text or len(document_text.strip()) == 0:
+        logger.error("No documents found! Please add PDF files to the 'documents/' directory.")
+        logger.warning("Agent will run without document context.")
+        document_text = "No HVAC manuals are currently loaded. Please add PDF manuals to the documents/ directory."
+    else:
+        logger.info(f"Documents loaded successfully. Raw text length: {len(document_text)} characters")
     
-    # Truncate document text to fit context window
+    # Initialize LLM service
     llm_service = LLMService()
     available_tokens = llm_service.get_available_context_tokens()
-    document_text = doc_processor.truncate_to_fit_context(
-        document_text,
-        max_tokens=available_tokens,
-        reserved_tokens=3000  # Reserve tokens for system prompt, conversation, and response
-    )
+    logger.info(f"Model context window: {available_tokens} tokens")
     
-    logger.info(f"Loaded document context ({doc_processor.get_context_length(document_text)} tokens)")
+    # Truncate document text to fit context window (reserve space for conversation)
+    if document_text and len(document_text.strip()) > 0:
+        original_length = doc_processor.get_context_length(document_text)
+        document_text = doc_processor.truncate_to_fit_context(
+            document_text,
+            max_tokens=available_tokens,
+            reserved_tokens=4000  # Reserve tokens for system prompt, conversation history, and responses
+        )
+        final_length = doc_processor.get_context_length(document_text)
+        logger.info(f"Document context: {final_length} tokens (was {original_length} tokens)")
+        
+        # Log a sample of the document to verify it loaded
+        sample = document_text[:200] + "..." if len(document_text) > 200 else document_text
+        logger.debug(f"Document sample: {sample}")
     
     # Create system prompt with document context
     system_prompt = llm_service.create_system_prompt(document_context=document_text)
+    logger.info(f"System prompt created ({len(system_prompt)} characters)")
     
-    # Create chat context with system prompt
+    # Create chat context with system prompt containing documents
     chat_ctx = llm.ChatContext().append(
         role="system",
         text=system_prompt,
@@ -65,11 +79,12 @@ async def entrypoint(ctx: JobContext):
         chat_ctx=chat_ctx,
     )
     
-    logger.info("HVAC Voice Agent initialized")
+    logger.info("HVAC Voice Agent initialized with document context")
+    logger.info("Agent is ready to answer questions using the loaded HVAC manuals")
     
     # Start the session
     await session.start(ctx.room)
-    logger.info("Voice agent started")
+    logger.info("Voice agent started and listening")
     
     # Keep the agent running
     try:
@@ -78,6 +93,7 @@ async def entrypoint(ctx: JobContext):
         logger.info("Agent session cancelled")
     finally:
         await session.aclose()
+        logger.info("Agent session closed")
 
 
 if __name__ == "__main__":

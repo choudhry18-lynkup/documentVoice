@@ -72,17 +72,20 @@ class DocumentProcessor:
             max_documents: Maximum number of documents to load (default: 2)
             
         Returns:
-            Combined text from all documents
+            Combined text from all documents with clear document markers
         """
         pdf_files = list(self.documents_dir.glob("*.pdf"))
         
         if not pdf_files:
             logger.warning(f"No PDF files found in {self.documents_dir}")
+            logger.info(f"Looking in directory: {self.documents_dir.absolute()}")
             return ""
         
         # Sort by modification time (newest first) and take up to max_documents
         pdf_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
         pdf_files = pdf_files[:max_documents]
+        
+        logger.info(f"Found {len(pdf_files)} PDF file(s) to load")
         
         combined_texts = []
         
@@ -90,12 +93,23 @@ class DocumentProcessor:
             logger.info(f"Loading document: {pdf_file.name}")
             try:
                 text = self.extract_text_from_pdf(str(pdf_file))
-                combined_texts.append(f"=== {pdf_file.name} ===\n{text}")
+                if text and text.strip():
+                    # Add clear document separator with filename
+                    combined_texts.append(f"\n{'='*80}\nDOCUMENT: {pdf_file.name}\n{'='*80}\n\n{text}\n")
+                    logger.info(f"Successfully loaded {pdf_file.name} ({len(text)} characters)")
+                else:
+                    logger.warning(f"Document {pdf_file.name} extracted but contains no text")
             except Exception as e:
                 logger.error(f"Failed to load {pdf_file.name}: {e}")
                 continue
         
-        return "\n\n" + "="*80 + "\n\n".join(combined_texts)
+        if not combined_texts:
+            logger.error("No documents were successfully loaded")
+            return ""
+        
+        result = "\n".join(combined_texts)
+        logger.info(f"Total combined document text: {len(result)} characters")
+        return result
     
     def get_context_length(self, text: str) -> int:
         """Get approximate token count (rough estimate: 1 token ≈ 4 characters)."""
